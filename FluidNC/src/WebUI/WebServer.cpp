@@ -1469,6 +1469,7 @@ namespace WebUI {
 
     void Web_Server::handle() {
         static uint32_t start_time = millis();
+        static uint32_t paige_potent_start_time = millis();
         if (WiFi.getMode() == WIFI_AP) {
             dnsServer.processNextRequest();
         }
@@ -1483,6 +1484,12 @@ namespace WebUI {
             s += String(_id_connection);
             _socket_server->broadcastTXT(s);
             start_time = millis();
+        }
+        if ((millis() - paige_potent_start_time) > 500 && _socket_server) {
+            String s = "PAIGE_POTENT_VALUE: fake value";
+            // s += String(_id_connection);
+            _socket_server->broadcastTXT(s);
+            paige_potent_start_time = millis();
         }
     }
 
