@@ -1486,7 +1486,7 @@ namespace WebUI {
             start_time = millis();
         }
         if ((millis() - paige_potent_start_time) > 500 && _socket_server) {
-            int paige_raw_pot_value = analogRead(36);
+            int paige_raw_pot_value = analogRead(32);
             int paige_mapped_pot_value = map(paige_raw_pot_value, 0, 4095, 0, 100);
             String s = "PAIGE_POTENT_VALUE:";
             s += String(paige_mapped_pot_value);
