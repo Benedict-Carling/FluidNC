@@ -790,9 +790,9 @@ static void protocol_exec_rt_suspend() {
                         }
                     }
                 }
+            } else {
+                protocol_manage_spindle();
             }
-        } else {
-            protocol_manage_spindle();
         }
         pollChannels();  // Handle realtime commands like status report, cycle start and reset
         protocol_exec_rt_system();
@@ -893,7 +893,8 @@ static void protocol_do_limit(void* arg) {
         Machine::Homing::limitReached();
         return;
     }
-    if (sys.state == State::Cycle) {
+    log_debug("Limit switch tripped for " << config->_axes->axisName(limit->_axis) << " motor " << limit->_motorNum);
+    if (sys.state == State::Cycle || sys.state == State::Jog) {
         if (limit->isHard() && rtAlarm == ExecAlarm::None) {
             log_debug("Hard limits");
             mc_reset();                      // Initiate system kill.
@@ -901,8 +902,6 @@ static void protocol_do_limit(void* arg) {
         }
         return;
     }
-    log_debug("Limit switch tripped for " << config->_axes->axisName(limit->_axis) << " motor " << limit->_motorNum);
-    Machine::EventPin::startTimer();
 }
 ArgEvent feedOverrideEvent { protocol_do_feed_override };
 ArgEvent rapidOverrideEvent { protocol_do_rapid_override };
