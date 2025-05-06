@@ -9,18 +9,18 @@
 namespace Pins {
     class VoidPinDetail : public PinDetail {
     public:
-        VoidPinDetail(int number = 0);
-        VoidPinDetail(const PinOptionsParser& options);
+        explicit VoidPinDetail(int number = 0);
+        explicit VoidPinDetail(const PinOptionsParser& options);
 
         PinCapabilities capabilities() const override;
 
         // I/O:
         void          write(int high) override;
         int           read() override;
-        void          setAttr(PinAttributes value) override;
+        void          setAttr(PinAttributes value, uint32_t frequency) override;
         PinAttributes getAttr() const override;
 
-        String toString() override;
+        std::string toString() override;
 
         ~VoidPinDetail() override {}
     };

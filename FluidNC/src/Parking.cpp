@@ -2,7 +2,6 @@
 // Use of this source code is governed by a GPLv3 license that can be found in the LICENSE file.
 
 #include "Parking.h"
-#include "Logging.h"
 #include "System.h"                 // sys
 #include "Stepper.h"                // Stepper::
 #include "Machine/MachineConfig.h"  // config
@@ -21,7 +20,6 @@ void Parking::moveto(float* target) {
         Stepper::prep_buffer();
         Stepper::wake_up();
         do {
-            pollChannels();  // Handle realtime commands like status report, cycle start and reset
             protocol_exec_rt_system();
             if (sys.abort) {
                 return;
@@ -66,6 +64,7 @@ void Parking::setup() {
     plan_data.motion.systemMotion   = 1;
     plan_data.motion.noFeedOverride = 1;
     plan_data.line_number           = PARKING_MOTION_LINE_NUMBER;
+    plan_data.is_jog                = false;
     block                           = plan_get_current_block();
 
     if (block) {
@@ -114,7 +113,7 @@ void Parking::park(bool restart) {
 
         log_debug("Spin down");
         spindle->spinDown();
-        report_ovr_counter = 0;  // Set to report change immediately
+        gc_ovr_changed();
 
         // Execute fast parking retract motion to parking target location.
         if (parking_target[_axis] < _target_mpos) {
@@ -129,7 +128,7 @@ void Parking::park(bool restart) {
         // NOTE: Laser mode does not start a parking motion to ensure the laser stops immediately.
         spindle->spinDown();
         config->_coolant->off();
-        report_ovr_counter = 0;  // Set to report changes immediately
+        gc_ovr_changed();
     }
 }
 void Parking::unpark(bool restart) {
@@ -155,7 +154,7 @@ void Parking::unpark(bool restart) {
             } else {
                 log_debug("Spin up");
                 restore_spindle();
-                report_ovr_counter = 0;  // Set to report change immediately
+                gc_ovr_changed();
             }
         }
     }
@@ -163,7 +162,7 @@ void Parking::unpark(bool restart) {
         // Block if safety door re-opened during prior restore actions.
         if (!restart) {
             restore_coolant();
-            report_ovr_counter = 0;  // Set to report change immediately
+            gc_ovr_changed();
         }
     }
 

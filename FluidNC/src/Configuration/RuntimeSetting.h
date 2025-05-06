@@ -14,7 +14,7 @@ namespace Configuration {
 
         const char* newValue_;  // null (read) or 123 (value)
 
-        Print& out_;
+        Channel& out_;
 
         bool is(const char* name) const {
             if (start_ != nullptr) {
@@ -31,17 +31,23 @@ namespace Configuration {
         bool matchesUninitialized(const char* name) override { return false; }
 
     public:
-        RuntimeSetting(const char* key, const char* value, Print& out);
+        RuntimeSetting(const char* key, const char* value, Channel& out);
 
         void item(const char* name, bool& value) override;
-        void item(const char* name, int32_t& value, int32_t minValue, int32_t maxValue) override;
-        void item(const char* name, float& value, float minValue, float maxValue) override;
+        void item(const char* name, int32_t& value, const int32_t minValue, const int32_t maxValue) override;
+        void item(const char* name, uint32_t& value, const uint32_t minValue, const uint32_t maxValue) override;
+        void item(const char* name, float& value, const float minValue, const float maxValue) override;
         void item(const char* name, std::vector<speedEntry>& value) override;
-        void item(const char* name, UartData& wordLength, UartParity& parity, UartStop& stopBits) override {}
-        void item(const char* name, String& value, int minLength, int maxLength) override;
+        void item(const char* name, std::vector<float>& value) override;
+        void item(const char* name, UartData& wordLength, UartParity& parity, UartStop& stopBits) override;
+        void item(const char* name, std::string& value, const int minLength, const int maxLength) override;
+        void item(const char* name, EventPin& value) override;
         void item(const char* name, Pin& value) override;
+        void item(const char* name, Macro& value) override;
         void item(const char* name, IPAddress& value) override;
-        void item(const char* name, int& value, EnumItem* e) override;
+        void item(const char* name, int& value, const EnumItem* e) override;
+
+        std::string setting_prefix();
 
         HandlerType handlerType() override { return HandlerType::Runtime; }
 

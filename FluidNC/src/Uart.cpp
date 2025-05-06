@@ -5,26 +5,115 @@
  * UART driver that accesses the ESP32 hardware FIFOs directly.
  */
 
-#include "Logging.h"
 #include "Uart.h"
+#include <Driver/fluidnc_uart.h>
 
-#include <driver/uart.h>
-
-Uart::Uart(int uart_num, bool addCR) : Channel("uart", addCR) {
-    // Auto-assign Uart harware engine numbers; the pins will be
-    // assigned to the engines separately
-    static int currentNumber = 1;
-    if (uart_num == -1) {
-        Assert(currentNumber <= 3, "Max number of UART's reached.");
-        uart_num = currentNumber++;
-    } else {
-        _lineedit = new Lineedit(this, _line, Channel::maxLine - 1);
+std::string encodeUartMode(UartData wordLength, UartParity parity, UartStop stopBits) {
+    std::string s;
+    s += std::to_string(int(wordLength) - int(UartData::Bits5) + 5);
+    switch (parity) {
+        case UartParity::Even:
+            s += 'E';
+            break;
+        case UartParity::Odd:
+            s += 'O';
+            break;
+        case UartParity::None:
+            s += 'N';
+            break;
     }
-    _uart_num = uart_port_t(uart_num);
+    switch (stopBits) {
+        case UartStop::Bits1:
+            s += '1';
+            break;
+        case UartStop::Bits1_5:
+            s += "1.5";
+            break;
+        case UartStop::Bits2:
+            s += '2';
+            break;
+    }
+    return s;
 }
 
-// Use the specified baud rate
-void Uart::begin(unsigned long baudrate) {
+const char* decodeUartMode(std::string_view str, UartData& wordLength, UartParity& parity, UartStop& stopBits) {
+    str = string_util::trim(str);
+    if (str.length() == 5 || str.length() == 3) {
+        int32_t wordLenInt;
+        if (!string_util::is_int(str.substr(0, 1), wordLenInt)) {
+            return "Uart mode should be specified as [Bits Parity Stopbits] like [8N1]";
+        } else if (wordLenInt < 5 || wordLenInt > 8) {
+            return "Number of data bits for uart is out of range. Expected format like [8N1].";
+        }
+        wordLength = UartData(int(UartData::Bits5) + (wordLenInt - 5));
+
+        switch (str[1]) {
+            case 'N':
+            case 'n':
+                parity = UartParity::None;
+                break;
+            case 'O':
+            case 'o':
+                parity = UartParity::Odd;
+                break;
+            case 'E':
+            case 'e':
+                parity = UartParity::Even;
+                break;
+            default:
+                return "Uart mode should be specified as [Bits Parity Stopbits] like [8N1]";
+                break;  // Omits compiler warning. Never hit.
+        }
+
+        auto stop = str.substr(2, str.length() - 2);
+        if (stop == "1") {
+            stopBits = UartStop::Bits1;
+        } else if (stop == "1.5") {
+            stopBits = UartStop::Bits1_5;
+        } else if (stop == "2") {
+            stopBits = UartStop::Bits2;
+        } else {
+            return "Uart stopbits can only be 1, 1.5 or 2. Syntax is [8N1]";
+        }
+
+    } else {
+        return "Uart mode should be specified as [Bits Parity Stopbits] like [8N1]";
+    }
+    return "";
+}
+
+Uart::Uart(int uart_num) : _uart_num(uart_num), _name("uart") {
+    _name += std::to_string(uart_num);
+}
+
+void Uart::changeMode(unsigned long baud, UartData dataBits, UartParity parity, UartStop stopBits) {
+    uart_mode(_uart_num, baud, dataBits, parity, stopBits);
+}
+void Uart::restoreMode() {
+    changeMode(_baud, _dataBits, _parity, _stopBits);
+}
+
+void Uart::enterPassthrough() {
+    changeMode(_passthrough_baud, _passthrough_databits, _passthrough_parity, _passthrough_stopbits);
+}
+
+void Uart::exitPassthrough() {
+    restoreMode();
+    if (_sw_flowcontrol_enabled) {
+        setSwFlowControl(_sw_flowcontrol_enabled, _xon_threshold, _xoff_threshold);
+    }
+}
+
+// This version is used for the initial console UART where we do not want to change the pins
+void Uart::begin(unsigned long baud, UartData dataBits, UartStop stopBits, UartParity parity) {
+    //    uart_driver_delete(_uart_num);
+    changeMode(baud, dataBits, parity, stopBits);
+
+    uart_init(_uart_num);
+}
+
+// This version is used when we have a config section with all the parameters
+void Uart::begin() {
     auto txd = _txd_pin.getNative(Pin::Capabilities::UART | Pin::Capabilities::Output);
     auto rxd = _rxd_pin.getNative(Pin::Capabilities::UART | Pin::Capabilities::Input);
     auto rts = _rts_pin.undefined() ? -1 : _rts_pin.getNative(Pin::Capabilities::UART | Pin::Capabilities::Output);
@@ -35,34 +124,76 @@ void Uart::begin(unsigned long baudrate) {
         return;
     }
 
-    begin(baudrate, dataBits, stopBits, parity);
+    begin(_baud, _dataBits, _stopBits, _parity);
+    config_message("UART", std::to_string(_uart_num).c_str());
 }
 
-// Use the configured baud rate
-void Uart::begin() {
-    begin(static_cast<unsigned long>(baud));
+int Uart::read() {
+    if (_pushback != -1) {
+        int ret   = _pushback;
+        _pushback = -1;
+        return ret;
+    }
+    uint8_t c;
+    int     res = uart_read(_uart_num, &c, 1, 0);
+    return res == 1 ? c : -1;
 }
 
-void Uart::begin(unsigned long baudrate, UartData dataBits, UartStop stopBits, UartParity parity) {
-    //    uart_driver_delete(_uart_num);
-    uart_config_t conf;
-    conf.baud_rate           = baudrate;
-    conf.data_bits           = uart_word_length_t(dataBits);
-    conf.parity              = uart_parity_t(parity);
-    conf.stop_bits           = uart_stop_bits_t(stopBits);
-    conf.flow_ctrl           = UART_HW_FLOWCTRL_DISABLE;
-    conf.rx_flow_ctrl_thresh = 0;
-    if (uart_param_config(_uart_num, &conf) != ESP_OK) {
-        // TODO FIXME - should this throw an error?
-        return;
-    };
-    uart_driver_install(_uart_num, 256, 0, 0, NULL, 0);
+size_t Uart::write(uint8_t c) {
+    // Use Uart::write(buf, len) instead of uart_write_bytes() for _addCR
+    return write(&c, 1);
 }
 
-int Uart::available() {
-    size_t size = 0;
-    uart_get_buffered_data_len(_uart_num, &size);
-    return size + (_pushback != -1);
+size_t Uart::write(const uint8_t* buffer, size_t length) {
+    return uart_write(_uart_num, buffer, length);
+}
+
+// size_t Uart::write(const char* text) {
+//    return uart_write_bytes(_uart_num, text, strlen(text));
+// }
+
+size_t Uart::timedReadBytes(char* buffer, size_t len, TickType_t timeout) {
+    int res = uart_read(_uart_num, (uint8_t*)buffer, len, timeout);
+    // If res < 0, no bytes were read
+
+    return res < 0 ? 0 : res;
+}
+
+void Uart::forceXon() {
+    uart_xon(_uart_num);
+}
+
+void Uart::forceXoff() {
+    uart_xoff(_uart_num);
+}
+
+void Uart::setSwFlowControl(bool on, int xon_threshold, int xoff_threshold) {
+    _sw_flowcontrol_enabled = on;
+    _xon_threshold          = xon_threshold;
+    _xoff_threshold         = xoff_threshold;
+    uart_sw_flow_control(_uart_num, on, xon_threshold, xoff_threshold);
+}
+void Uart::getSwFlowControl(bool& enabled, int& xon_threshold, int& xoff_threshold) {
+    enabled        = _sw_flowcontrol_enabled;
+    xon_threshold  = _xon_threshold;
+    xoff_threshold = _xoff_threshold;
+}
+bool Uart::setHalfDuplex() {
+    return uart_half_duplex(_uart_num);
+}
+bool Uart::setPins(int tx_pin, int rx_pin, int rts_pin, int cts_pin) {
+    return uart_pins(_uart_num, tx_pin, rx_pin, rts_pin, cts_pin);
+}
+bool Uart::flushTxTimed(TickType_t ticks) {
+    return uart_wait_output(_uart_num, ticks) != ESP_OK;
+}
+
+void Uart::config_message(const char* prefix, const char* usage) {
+    log_info(prefix << usage << " Tx:" << _txd_pin.name() << " Rx:" << _rxd_pin.name() << " RTS:" << _rts_pin.name() << " Baud:" << _baud);
+}
+
+int Uart::rx_buffer_available(void) {
+    return UART_FIFO_LEN - available();
 }
 
 int Uart::peek() {
@@ -77,125 +208,15 @@ int Uart::peek() {
     return ch;
 }
 
-int Uart::read(TickType_t timeout) {
-    if (_pushback != -1) {
-        int ret   = _pushback;
-        _pushback = -1;
-        return ret;
-    }
-    uint8_t c;
-    int     res = uart_read_bytes(_uart_num, &c, 1, timeout);
-    return res == 1 ? c : -1;
-}
-
-int Uart::read() {
-    return read(0);
-}
-
-int Uart::rx_buffer_available() {
-    return UART_FIFO_LEN - available();
-}
-
-bool Uart::realtimeOkay(char c) {
-    return _lineedit->realtime(c);
-}
-
-bool Uart::lineComplete(char* line, char c) {
-    if (_lineedit->step(c)) {
-        _linelen        = _lineedit->finish();
-        _line[_linelen] = '\0';
-        strcpy(line, _line);
-        _linelen = 0;
-        return true;
-    }
-    return false;
-}
-
-Channel* Uart::pollLine(char* line) {
-    // UART0 is the only Uart instance that can be a channel input device
-    // Other UART users like RS485 use it as a dumb character device
-    if (_lineedit == nullptr) {
-        return nullptr;
-    }
-    return Channel::pollLine(line);
-}
-
-size_t Uart::timedReadBytes(char* buffer, size_t length, TickType_t timeout) {
-    // It is likely that _queue will be empty because timedReadBytes() is only
-    // used in situations where the UART is not receiving GCode commands
-    // and Grbl realtime characters.
-    size_t remlen = length;
-    while (remlen && _queue.size()) {
-        *buffer++ = _queue.front();
-        _queue.pop();
-    }
-
-    int res = uart_read_bytes(_uart_num, (uint8_t*)buffer, remlen, timeout);
-    // If res < 0, no bytes were read
-    remlen -= (res < 0) ? 0 : res;
-    return length - remlen;
-}
-size_t Uart::write(uint8_t c) {
-    // Use Uart::write(buf, len) instead of uart_write_bytes() for _addCR
-    return write(&c, 1);
-}
-
-size_t Uart::write(const uint8_t* buffer, size_t length) {
-    // Replace \n with \r\n
-    if (_addCR) {
-        size_t rem      = length;
-        char   lastchar = '\0';
-        size_t j        = 0;
-        while (rem) {
-            const int bufsize = 80;
-            char      modbuf[bufsize];
-            // bufsize-1 in case the last character is \n
-            size_t k = 0;
-            while (rem && k < (bufsize - 1)) {
-                char c = buffer[j++];
-                if (c == '\n' && lastchar != '\r') {
-                    modbuf[k++] = '\r';
-                }
-                lastchar    = c;
-                modbuf[k++] = c;
-                --rem;
-            }
-
-            uart_write_bytes(_uart_num, (const char*)modbuf, k);
-        }
-    } else {
-        uart_write_bytes(_uart_num, (const char*)buffer, length);
-    }
-    return length;
-}
-
-// size_t Uart::write(const char* text) {
-//    return uart_write_bytes(_uart_num, text, strlen(text));
-// }
-
-bool Uart::setHalfDuplex() {
-    return uart_set_mode(_uart_num, UART_MODE_RS485_HALF_DUPLEX) != ESP_OK;
-}
-bool Uart::setPins(int tx_pin, int rx_pin, int rts_pin, int cts_pin) {
-    return uart_set_pin(_uart_num, tx_pin, rx_pin, rts_pin, cts_pin) != ESP_OK;
-}
-bool Uart::flushTxTimed(TickType_t ticks) {
-    return uart_wait_tx_done(_uart_num, ticks) != ESP_OK;
-}
-
-Uart Uart0(0, true);  // Primary serial channel with LF to CRLF conversion
-
-void uartInit() {
-    // Uart0.setPins(GPIO_NUM_1, GPIO_NUM_3);  // Tx 1, Rx 3 - standard hardware pins
-    Uart0.begin(BAUD_RATE, UartData::Bits8, UartStop::Bits1, UartParity::None);
-}
-
-void Uart::config_message(const char* prefix, const char* usage) {
-    log_info(prefix << usage << "Uart Tx:" << _txd_pin.name() << " Rx:" << _rxd_pin.name() << " RTS:" << _rts_pin.name() << " Baud:" << baud);
+int Uart::available() {
+    return uart_buflen(_uart_num) + (_pushback != -1);
 }
 
 void Uart::flushRx() {
     _pushback = -1;
-    uart_flush_input(_uart_num);
-    Channel::flushRx();
+    uart_discard_input(_uart_num);
+}
+
+void Uart::registerInputPin(uint8_t pinnum, InputPin* pin) {
+    uart_register_input_pin(_uart_num, pinnum, pin);
 }

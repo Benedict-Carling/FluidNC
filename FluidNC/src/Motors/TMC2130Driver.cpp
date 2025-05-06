@@ -12,6 +12,8 @@
 namespace MotorDrivers {
 
     void TMC2130Driver::init() {
+        TrinamicSpiDriver::init();
+
         uint8_t cs_id;
         cs_id = setupSPI();
 
@@ -21,7 +23,7 @@ namespace MotorDrivers {
 
         tmc2130 = new TMC2130Stepper(cs_id, _r_sense, _spi_index);  // TODO hardwired to non daisy chain index
 
-        TrinamicSpiDriver::finalInit();
+        registration();
     }
 
     void TMC2130Driver::config_motor() {
@@ -29,7 +31,9 @@ namespace MotorDrivers {
         TrinamicBase::config_motor();
     }
 
-    bool TMC2130Driver::test() { return checkVersion(0x11, tmc2130->version()); }
+    bool TMC2130Driver::test() {
+        return checkVersion(0x11, tmc2130->version());
+    }
 
     void TMC2130Driver::set_registers(bool isHoming) {
         if (_has_errors) {
@@ -42,11 +46,16 @@ namespace MotorDrivers {
         // but the TMCStepper library expresses run current as (uint16_t) mA
         // and hold current as (float) fraction of run current.
         uint16_t run_i = (uint16_t)(_run_current * 1000.0);
+        tmc2130->I_scale_analog(false);  // do not scale via pot
         tmc2130->rms_current(run_i, TrinamicSpiDriver::holdPercent());
 
         // The TMCStepper library uses the value 0 to mean 1x microstepping
         int usteps = _microsteps == 1 ? 0 : _microsteps;
         tmc2130->microsteps(usteps);
+
+        tmc2130->diag0_error(_diag0_error);
+        tmc2130->diag0_otpw(_diag0_otpw);
+        tmc2130->diag0_int_pushpull(_diag0_int_pushpull);
 
         switch (_mode) {
             case TrinamicMode ::StealthChop:
@@ -65,12 +74,10 @@ namespace MotorDrivers {
             case TrinamicMode ::StallGuard:
                 log_debug(axisName() << " Stallguard");
                 {
-                    auto feedrate = config->_axes->_axis[axis_index()]->_homing->_feedRate;
-
                     tmc2130->en_pwm_mode(false);
                     tmc2130->pwm_autoscale(false);
-                    tmc2130->TCOOLTHRS(calc_tstep(feedrate, 150.0));
-                    tmc2130->THIGH(calc_tstep(feedrate, 60.0));
+                    tmc2130->TCOOLTHRS(calc_tstep(150));
+                    tmc2130->THIGH(calc_tstep(60));
                     tmc2130->sfilt(1);
                     tmc2130->diag1_stall(true);  // stallguard i/o is on diag1
                     tmc2130->sgt(constrain(_stallguard, -64, 63));

@@ -1,45 +1,38 @@
 // Copyright (c) 2014 Luc Lebosse. All rights reserved.
 // Use of this source code is governed by a GPLv3 license that can be found in the LICENSE file.
-
-#include "../Machine/MachineConfig.h"
+// #include <ESPmDNS.h>
+#include "src/Machine/MachineConfig.h"
 #include "TelnetClient.h"
 #include "TelnetServer.h"
-#include "WebSettings.h"
 
-#include "../Uart.h"
+#include "Mdns.h"
+#include "src/Report.h"  // report_init_message()
 
-#ifdef ENABLE_WIFI
-
-namespace WebUI {
-    TelnetServer telnetServer;
-}
-
-#    include "WifiServices.h"
-
-#    include "WifiConfig.h"
-#    include "../Report.h"  // report_init_message()
-#    include "Commands.h"   // COMMANDS
-
-#    include <WiFi.h>
+#include <WiFi.h>
 
 namespace WebUI {
 
     EnumSetting* telnet_enable;
     IntSetting*  telnet_port;
 
-    TelnetServer::TelnetServer() {
-        telnet_port = new IntSetting(
-            "Telnet Port", WEBSET, WA, "ESP131", "Telnet/Port", DEFAULT_TELNETSERVER_PORT, MIN_TELNET_PORT, MAX_TELNET_PORT, NULL);
+    uint16_t TelnetServer::_port = 0;
 
-        telnet_enable = new EnumSetting("Telnet Enable", WEBSET, WA, "ESP130", "Telnet/Enable", DEFAULT_TELNET_STATE, &onoffOptions, NULL);
-    }
+    std::queue<TelnetClient*> TelnetServer::_disconnected;
 
-    bool TelnetServer::begin() {
-        bool no_error = true;
-        end();
+    void TelnetServer::init() {
+        if (WiFi.getMode() == WIFI_OFF) {
+            return;
+        }
+
+        deinit();
+
+        telnet_port =
+            new IntSetting("Telnet Port", WEBSET, WA, "ESP131", "Telnet/Port", DEFAULT_TELNETSERVER_PORT, MIN_TELNET_PORT, MAX_TELNET_PORT);
+
+        telnet_enable = new EnumSetting("Telnet Enable", WEBSET, WA, "ESP130", "Telnet/Enable", DEFAULT_TELNET_STATE, &onoffOptions);
 
         if (!WebUI::telnet_enable->get()) {
-            return false;
+            return;
         }
         _port = WebUI::telnet_port->get();
 
@@ -50,18 +43,22 @@ namespace WebUI {
         //start telnet server
         _wifiServer->begin();
         _setupdone = true;
-        return no_error;
+
+        Mdns::add("_telnet", "_tcp", _port);
     }
 
-    void TelnetServer::end() {
+    void TelnetServer::deinit() {
         _setupdone = false;
         if (_wifiServer) {
             // delete _wifiServer;
             _wifiServer = NULL;
         }
+
+        //remove mDNS
+        Mdns::remove("_telnet", "_tcp");
     }
 
-    void TelnetServer::handle() {
+    void TelnetServer::poll() {
         if (!_setupdone || _wifiServer == NULL) {
             return;
         }
@@ -85,7 +82,14 @@ namespace WebUI {
             allChannels.registration(tnc);
         }
     }
-    TelnetServer::~TelnetServer() { end(); }
-}
 
-#endif
+    void TelnetServer::status_report(Channel& out) {
+        log_stream(out, "Data port: " << port());
+    }
+
+    TelnetServer::~TelnetServer() {
+        deinit();
+    }
+
+    ModuleFactory::InstanceBuilder<TelnetServer> __attribute__((init_priority(109))) telnet_module("telnet_server", true);
+}

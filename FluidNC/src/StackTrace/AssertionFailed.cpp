@@ -11,17 +11,16 @@
 #    ifdef BACKTRACE_ON_ASSERT
 #        include "esp_debug_helpers.h"
 #    endif
-#    include "WString.h"
 #    include "stdio.h"
 
 AssertionFailed AssertionFailed::create(const char* condition, const char* msg, ...) {
-    String st = condition;
+    std::string st = condition;
     st += ": ";
 
     char    tmp[255];
     va_list arg;
     va_start(arg, msg);
-    size_t len = vsnprintf(tmp, 255, msg, arg);
+    vsnprintf(tmp, 255, msg, arg);
     va_end(arg);
     tmp[254] = 0;
 
@@ -40,11 +39,10 @@ AssertionFailed AssertionFailed::create(const char* condition, const char* msg, 
 #    include <iostream>
 #    include <string>
 #    include <sstream>
-#    include "WString.h"
 
 extern void DumpStackTrace(std::ostringstream& builder);
 
-String stackTrace;
+std::string stackTrace;
 
 std::exception AssertionFailed::create(const char* condition, const char* msg, ...) {
     std::ostringstream oss;
@@ -54,9 +52,9 @@ std::exception AssertionFailed::create(const char* condition, const char* msg, .
     char    tmp[255];
     va_list arg;
     va_start(arg, msg);
-    size_t len = vsnprintf(tmp, 255, msg, arg);
-    tmp[254]   = 0;
-    msg        = tmp;
+    vsnprintf(tmp, 255, msg, arg);
+    tmp[254] = 0;
+    msg      = tmp;
     oss << tmp;
 
     oss << " at ";

@@ -3,7 +3,7 @@
 // Use of this source code is governed by a GPLv3 license that can be found in the LICENSE file.
 
 #include "UserOutputs.h"
-#include "../Logging.h"     // log_*
+#include "../Config.h"      // log_*
 #include <esp32-hal-cpu.h>  // getApbFrequency()
 
 namespace Machine {
@@ -20,7 +20,7 @@ namespace Machine {
             if (pin.defined()) {
                 pin.setAttr(Pin::Attr::Output);
                 pin.off();
-                log_info("User Digital Output:" << i << " on Pin:" << pin.name());
+                log_info("User Digital Output: " << i << " on Pin:" << pin.name());
             }
         }
         // determine the highest resolution (number of precision bits) allowed by frequency
@@ -30,9 +30,9 @@ namespace Machine {
             uint8_t resolution_bits;
             Pin&    pin = _analogOutput[i];
             if (pin.defined()) {
-                _pwm[i] = new PwmPin(pin, _analogFrequency[i]);
-                _pwm[i]->setDuty(0);
-                log_info("User Analog Output " << i << " on Pin:" << pin.name() << " Freq:" << _pwm[i]->frequency() << "Hz");
+                pin.setAttr(Pin::Attr::PWM, _analogFrequency[i]);
+                pin.setDuty(0);
+                log_info("User Analog Output: " << i << " on Pin:" << pin.name() << " Freq:" << _analogFrequency[i] << "Hz");
             }
         }
     }
@@ -40,6 +40,8 @@ namespace Machine {
     void UserOutputs::all_off() {
         for (size_t io_num = 0; io_num < MaxUserDigitalPin; io_num++) {
             setDigital(io_num, false);
+        }
+        for (size_t io_num = 0; io_num < MaxUserAnalogPin; io_num++) {
             setAnalogPercent(io_num, 0);
         }
     }
@@ -61,21 +63,15 @@ namespace Machine {
             return percent == 0.0;
         }
 
-        uint32_t duty = uint32_t(percent / 100.0f * _denominator[io_num]);
-
-        auto pwm = _pwm[io_num];
-        if (!pwm) {
-            log_error("M67 PWM channel error");
-            return false;
-        }
-
+        // The 0.5 rounds to the nearest duty unit
+        uint32_t duty = uint32_t(((percent * pin.maxDuty()) / 100.0f) + 0.5);
         if (_current_value[io_num] == duty) {
             return true;
         }
 
         _current_value[io_num] = duty;
 
-        pwm->setDuty(duty);
+        pin.setDuty(duty);
 
         return true;
     }
@@ -93,5 +89,9 @@ namespace Machine {
         handler.item("digital1_pin", _digitalOutput[1]);
         handler.item("digital2_pin", _digitalOutput[2]);
         handler.item("digital3_pin", _digitalOutput[3]);
+        handler.item("digital4_pin", _digitalOutput[4]);
+        handler.item("digital5_pin", _digitalOutput[5]);
+        handler.item("digital6_pin", _digitalOutput[6]);
+        handler.item("digital7_pin", _digitalOutput[7]);
     }
 }

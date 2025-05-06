@@ -28,8 +28,10 @@
 
 namespace MotorDrivers {
     class MotorDriver : public Configuration::Configurable {
+        const char* _name;
+
     public:
-        MotorDriver() = default;
+        MotorDriver(const char* name) : _name(name) {}
 
         static constexpr int      max_n_axis = MAX_N_AXIS;
         static constexpr uint32_t axis_mask  = (1 << max_n_axis) - 1;
@@ -46,11 +48,6 @@ namespace MotorDrivers {
         // the stallguard debugging problem.
         virtual void debug_message();
 
-        // read_settings(), called from init(), re-establishes the motor
-        // setup from configurable arameters.
-        // TODO Architecture: Maybe this should be subsumed by init()
-        virtual void read_settings() {}
-
         // set_homing_mode() is called from motors_set_homing_mode(),
         // which in turn is called at the beginning of a homing cycle
         // with isHoming true, and at the end with isHoming false.
@@ -62,22 +59,6 @@ namespace MotorDrivers {
         // make a motor transition between idle and non-idle states.
         virtual void set_disable(bool disable);
 
-        // set_direction() sets the motor movement direction.  It is
-        // invoked for every motion segment.
-        virtual void set_direction(bool);
-
-        // step() initiates a step operation on a motor.  It is called
-        // from motors_step() for ever motor than needs to step now.
-        // For ordinary step/direction motors, it sets the step pin
-        // to the active state.
-        virtual void step();
-
-        // unstep() turns off the step pin, if applicable, for a motor.
-        // It is called from motors_unstep() for all motors, since
-        // motors_unstep() is used in many contexts where the previous
-        // states of the step pins are unknown.
-        virtual void unstep();
-
         // this is used to configure and test motors. This would be used for Trinamic
         virtual void config_motor() {}
 
@@ -87,13 +68,8 @@ namespace MotorDrivers {
         // TODO Architecture: Should this be private?
         virtual bool test();
 
-        // update() is used for some types of "smart" motors that
-        // can be told to move to a specific position.  It is
-        // called from a periodic task.
-        virtual void update() {}
-
         // Name is required for the configuration factory to work.
-        virtual const char* name() const = 0;
+        const char* name() { return _name; }
 
         // Test for a real motor as opposed to a NullMotor placeholder
         virtual bool isReal() { return true; }
@@ -102,7 +78,7 @@ namespace MotorDrivers {
         virtual ~MotorDriver() {}
 
     protected:
-        String axisName() const;
+        std::string axisName() const;
 
         // config_message(), called from init(), displays a message describing
         // the motor configuration - pins and other motor-specific items

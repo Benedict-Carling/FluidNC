@@ -7,39 +7,23 @@
 #include <atomic>
 
 namespace MotorDrivers {
-    EnumItem trinamicModes[] = { { TrinamicMode::StealthChop, "StealthChop" },
-                                 { TrinamicMode::CoolStep, "CoolStep" },
-                                 { TrinamicMode::StallGuard, "StallGuard" },
-                                 EnumItem(TrinamicMode::StealthChop) };
+    const EnumItem trinamicModes[] = { { TrinamicMode::StealthChop, "StealthChop" },
+                                       { TrinamicMode::CoolStep, "CoolStep" },
+                                       { TrinamicMode::StallGuard, "StallGuard" },
+                                       EnumItem(TrinamicMode::StealthChop) };
 
-    TrinamicBase* TrinamicBase::List = NULL;  // a static list of all drivers for stallguard reporting
+    std::vector<TrinamicBase*> TrinamicBase::_instances;  // static list of all drivers for stallguard reporting
 
-    // Prints StallGuard data that is useful for tuning.
-    void TrinamicBase::readSgTask(void* pvParameters) {
-        auto trinamicDriver = static_cast<TrinamicBase*>(pvParameters);
-
-        TickType_t       xLastWakeTime;
-        const TickType_t xreadSg = 200;  // in ticks (typically ms)
-        auto             n_axis  = config->_axes->_numberAxis;
-
-        xLastWakeTime = xTaskGetTickCount();  // Initialise the xLastWakeTime variable with the current time.
-        while (true) {                        // don't ever return from this or the task dies
-            std::atomic_thread_fence(std::memory_order::memory_order_seq_cst);  // read fence for settings
-            if (inMotionState()) {
-                for (TrinamicBase* p = List; p; p = p->link) {
-                    if (p->_stallguardDebugMode) {
-                        //log_info("SG:" << p->_stallguardDebugMode);
-                        p->debug_message();
-                    }
+    // Another approach would be to register a separate timer for each instance.
+    // I think that timers are cheap so having only a single timer might not buy us much
+    void TrinamicBase::read_sg(TimerHandle_t timer) {
+        if (inMotionState()) {
+            for (TrinamicBase* t : _instances) {
+                if (t->_stallguardDebugMode) {
+                    //log_info("SG:" << t->_stallguardDebugMode);
+                    t->debug_message();
                 }
-            }  // sys.state
-
-            vTaskDelayUntil(&xLastWakeTime, xreadSg);
-
-            static UBaseType_t uxHighWaterMark = 0;
-#ifdef DEBUG_TASK_STACK
-            reportTaskStackSize(uxHighWaterMark);
-#endif
+            }
         }
     }
 
@@ -47,8 +31,12 @@ namespace MotorDrivers {
     // tstep = fclk / (time between 1/256 steps)
     // This is used to set the stallguard window from the homing speed.
     // The percent is the offset on the window
-    uint32_t TrinamicBase::calc_tstep(float speed, float percent) {
-        double tstep = speed / 60.0 * config->_axes->_axis[axis_index()]->_stepsPerMm * (256.0 / _microsteps);
+    uint32_t TrinamicBase::calc_tstep(int percent) {
+        auto axisConfig     = Axes::_axis[axis_index()];
+        auto homing         = axisConfig->_homing;
+        auto homingFeedrate = homing ? homing->_feedRate : 200.0;
+
+        double tstep = homingFeedrate / 60.0 * Axes::_axis[axis_index()]->_stepsPerMm * (256.0 / _microsteps);
         tstep        = fclk / tstep * percent / 100.0;
 
         return static_cast<uint32_t>(tstep);
@@ -122,14 +110,16 @@ namespace MotorDrivers {
 
     bool TrinamicBase::checkVersion(uint8_t expected, uint8_t got) {
         if (expected != got) {
-            log_error(axisName() << " TMC driver not detected - expected 0x" << String(expected, 16) << " got 0x" << String(got, 16));
+            log_error(axisName() << " TMC driver not detected - expected " << to_hex(expected) << " got " << to_hex(got));
             return false;
         }
         log_info(axisName() << " driver test passed");
         return true;
     }
 
-    void TrinamicBase::reportCommsFailure(void) { log_info(axisName() << " communications check failed"); }
+    void TrinamicBase::reportCommsFailure(void) {
+        log_info(axisName() << " communications check failed");
+    }
 
     bool TrinamicBase::startDisable(bool disable) {
         if (_has_errors) {
@@ -147,15 +137,35 @@ namespace MotorDrivers {
         return true;
     }
 
+    void TrinamicBase::init() {
+        init_step_dir_pins();
+    }
+
     void TrinamicBase::config_motor() {
         _has_errors = !test();  // Try communicating with motor. Prints an error if there is a problem.
-
-        init_step_dir_pins();
 
         if (_has_errors) {
             return;
         }
 
         set_registers(false);
+    }
+    void TrinamicBase::registration() {
+        // Display the stepper library version message once, before the first
+        // TMC config message.
+        if (_instances.empty()) {
+            log_debug("TMCStepper Library Ver. " << to_hex(TMCSTEPPER_VERSION));
+            auto timer = xTimerCreate("Stallguard", 200, true, nullptr, read_sg);
+            // Timer failure is not fatal because you can still use the system
+            if (!timer) {
+                log_error("Failed to create timer for stallguard");
+            } else if (xTimerStart(timer, 0) == pdFAIL) {
+                log_error("Failed to start timer for stallguard");
+            }
+        }
+
+        _instances.push_back(this);
+
+        config_message();
     }
 }

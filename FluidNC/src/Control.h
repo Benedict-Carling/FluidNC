@@ -20,9 +20,11 @@ public:
     // Configuration handlers.
     void group(Configuration::HandlerBase& handler) override;
 
-    bool   stuck();
-    bool   safety_door_ajar();
-    String report_status();
+    bool stuck();
+    bool safety_door_ajar();
+    bool pins_block_unlock();
+
+    std::string report_status();
 
     bool startup_check();
 

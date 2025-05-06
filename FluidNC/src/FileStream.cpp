@@ -3,14 +3,12 @@
 
 #include "FileStream.h"
 #include "Machine/MachineConfig.h"  // config->
-#include "Driver/localfs.h"
-#include "Logging.h"
 
-String FileStream::path() {
+std::string FileStream::path() {
     return _fpath.c_str();
 }
 
-String FileStream::name() {
+std::string FileStream::name() {
     return path();
 }
 
@@ -61,15 +59,36 @@ void FileStream::setup(const char* mode) {
     _size = stdfs::file_size(_fpath);
 }
 
-FileStream::FileStream(const char* filename, const char* mode, const char* fs) : Channel("file"), _fpath(filename, fs) {
+FileStream::FileStream(const char* filename, const char* mode, const char* fs) : Channel(filename), _fpath(filename, fs), _mode(mode) {
     setup(mode);
 }
 
-FileStream::FileStream(FluidPath fpath, const char* mode) : Channel("file") {
+FileStream::FileStream(FluidPath fpath, const char* mode) : Channel("file"), _mode(mode) {
     std::swap(_fpath, fpath);
     setup(mode);
 }
 
-FileStream::~FileStream() {
+void FileStream::set_position(size_t pos) {
+    fseek(_fd, pos, SEEK_SET);
+}
+
+void FileStream::save() {
+    _saved_position = position();
     fclose(_fd);
+    _fd = nullptr;
+}
+
+void FileStream::restore() {
+    _fd = fopen(_fpath.c_str(), _mode);
+    if (_fd) {
+        fseek(_fd, _saved_position, SEEK_SET);
+    } else {
+        // XXX need to unwind the job stack somehow
+    }
+}
+
+FileStream::~FileStream() {
+    if (_fd) {
+        fclose(_fd);
+    }
 }

@@ -3,42 +3,52 @@
 // Use of this source code is governed by a GPLv3 license that can be found in the LICENSE file.
 
 #include "Probe.h"
+#include "Machine/EventPin.h"
+#include "Machine/MachineConfig.h"
 
-#include "Pin.h"
+extern void    protocol_do_probe(void* arg);
+const ArgEvent probeEvent { protocol_do_probe };
 
-// Probe pin initialization routine.
+Probe::ProbeEventPin::ProbeEventPin(const char* legend) : EventPin(&probeEvent, legend) {}
+
 void Probe::init() {
-    static bool show_init_msg = true;  // used to show message only once.
-
-    if (_probePin.defined()) {
-        _probePin.setAttr(Pin::Attr::Input);
-
-        if (show_init_msg) {
-            _probePin.report("Probe Pin:");
-            show_init_msg = false;
-        }
-    }
+    _probeEventPin.init();
+    _toolsetterEventPin.init();
 }
 
-void Probe::set_direction(bool is_away) {
-    _isProbeAway = is_away;
+void Probe::set_direction(bool away) {
+    _away = away;
 }
 
 // Returns the probe pin state. Triggered = true. Called by gcode parser.
 bool Probe::get_state() {
-    return _probePin.read();
+    return _probeEventPin.get() || _toolsetterEventPin.get();
 }
 
 // Returns true if the probe pin is tripped, accounting for the direction (away or not).
-// This function must be extremely efficient as to not bog down the stepper ISR.
-// Should be called only in situations where the probe pin is known to be defined.
-bool IRAM_ATTR Probe::tripped() {
-    return _probePin.read() ^ _isProbeAway;
+bool Probe::tripped() {
+    return get_state() ^ _away;
 }
 
-void Probe::validate() const {}
+void Probe::validate() {}
 
 void Probe::group(Configuration::HandlerBase& handler) {
-    handler.item("pin", _probePin);
+    handler.item("pin", _probeEventPin);
+    handler.item("toolsetter_pin", _toolsetterEventPin);
     handler.item("check_mode_start", _check_mode_start);
+    handler.item("hard_stop", _hard_stop);
+}
+void protocol_do_probe(void* arg) {
+    Probe* p = config->_probe;
+    if (p->tripped() && probing) {
+        probing = false;
+        get_motor_steps(probe_steps);
+        if (p->_hard_stop) {
+            Stepper::reset();
+            plan_reset();
+            sys.state = State::Idle;
+        } else {
+            protocol_do_motion_cancel();
+        }
+    }
 }

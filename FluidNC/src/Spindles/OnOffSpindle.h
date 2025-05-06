@@ -22,18 +22,17 @@ namespace Spindles {
             handler.item("output_pin", _output_pin);
             handler.item("enable_pin", _enable_pin);
             handler.item("disable_with_s0", _disable_with_zero_speed);
-            handler.item("s0_with_disable", _zero_speed_with_disable);
 
             Spindle::group(handler);
         }
 
     public:
-        OnOff() = default;
+        OnOff(const char* name) : Spindle(name) {}
 
-        OnOff(const OnOff&) = delete;
-        OnOff(OnOff&&)      = delete;
+        OnOff(const OnOff&)            = delete;
+        OnOff(OnOff&&)                 = delete;
         OnOff& operator=(const OnOff&) = delete;
-        OnOff& operator=(OnOff&&) = delete;
+        OnOff& operator=(OnOff&&)      = delete;
 
         void init() override;
 
@@ -46,7 +45,7 @@ namespace Spindles {
         virtual void set_enable(bool enable);
 
         // Configuration handlers:
-        void validate() const override { Spindle::validate(); }
+        void validate() override { Spindle::validate(); }
 
         void group(Configuration::HandlerBase& handler) override {
             handler.item("direction_pin", _direction_pin);
@@ -54,9 +53,6 @@ namespace Spindles {
         }
 
         virtual ~OnOff() {}
-
-        // Name of the configurable. Must match the name registered in the cpp file.
-        const char* name() const override { return "OnOff"; }
 
     protected:
         Pin _enable_pin;

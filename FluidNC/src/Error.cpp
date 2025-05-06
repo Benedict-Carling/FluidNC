@@ -5,7 +5,7 @@
 
 #include "Error.h"
 
-std::map<Error, const char*> ErrorNames = {
+const std::map<Error, const char*> ErrorNames = {
     { Error::Ok, "No error" },
     { Error::ExpectedCommandLetter, "Expected GCodecommand letter" },
     { Error::BadNumberFormat, "Bad GCode number format" },
@@ -57,10 +57,9 @@ std::map<Error, const char*> ErrorNames = {
     { Error::FsFailedBusy, "Device is busy" },
     { Error::FsFailedDelDir, "Failed to delete directory" },
     { Error::FsFailedDelFile, "Failed to delete file" },
+    { Error::FsFailedRenameFile, "Failed to rename file" },
     { Error::FsFailedCreateFile, "Failed to create file" },
     { Error::FsFailedFormat, "Failed to format filesystem" },
-    { Error::BtFailBegin, "Bluetooth failed to start" },
-    { Error::WifiFailBegin, "WiFi failed to start" },
     { Error::NumberRange, "Number out of range for setting" },
     { Error::InvalidValue, "Invalid value for setting" },
     { Error::MessageFailed, "Failed to send message" },
@@ -69,10 +68,25 @@ std::map<Error, const char*> ErrorNames = {
     { Error::AuthenticationFailed, "Authentication failed!" },
     { Error::Eol, "End of line" },
     { Error::Eof, "End of file" },
+    { Error::Reset, "System Reset" },
+    { Error::NoData, "No Data" },
     { Error::AnotherInterfaceBusy, "Another interface is busy" },
     { Error::BadPinSpecification, "Bad Pin Specification" },
+    { Error::BadRuntimeConfigSetting, "Bad Runtime Config Setting" },
     { Error::JogCancelled, "Jog Cancelled" },
     { Error::ConfigurationInvalid, "Configuration is invalid. Check boot messages for ERR's." },
     { Error::UploadFailed, "File Upload Failed" },
     { Error::DownloadFailed, "File Download Failed" },
+    { Error::ReadOnlySetting, "Read-only setting" },
+    { Error::ExpressionDivideByZero, "Expression Divide By Zero" },
+    { Error::ExpressionInvalidArgument, "Expression Invalid Argument" },
+    { Error::ExpressionUnknownOp, "Expression Unknown Operator" },
+    { Error::ExpressionArgumentOutOfRange, "Expression Argument Out of Range" },
+    { Error::ExpressionSyntaxError, "Expression Syntax Error" },
+    { Error::FlowControlSyntaxError, "Flow Control Syntax Error" },
+    { Error::FlowControlNotExecutingMacro, "Flow Control Not Executing Macro" },
+    { Error::FlowControlOutOfMemory, "Flow Control Out of Memory" },
+    { Error::FlowControlStackOverflow, "Flow Control Stack Overflow" },
+    { Error::ParameterAssignmentFailed, "Parameter Assignment Failed" },
+    { Error::GcodeValueWordInvalid, "Gcode invalid word value" },
 };

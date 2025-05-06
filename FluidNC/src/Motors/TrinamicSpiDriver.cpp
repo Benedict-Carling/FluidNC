@@ -15,7 +15,9 @@ namespace MotorDrivers {
     pinnum_t TrinamicSpiDriver::daisy_chain_cs_id = 255;
     uint8_t  TrinamicSpiDriver::spi_index_mask    = 0;
 
-    void TrinamicSpiDriver::init() {}
+    void TrinamicSpiDriver::init() {
+        TrinamicBase::init();
+    }
 
     uint8_t TrinamicSpiDriver::setupSPI() {
         _has_errors = false;
@@ -33,34 +35,6 @@ namespace MotorDrivers {
         }
 
         return cs_id;
-    }
-
-    void TrinamicSpiDriver::finalInit() {
-        _has_errors = false;
-
-        link = List;
-        List = this;
-
-        // Display the stepper library version message once, before the first
-        // TMC config message.  Link is NULL for the first TMC instance.
-        if (!link) {
-            log_debug("TMCStepper Library Ver. 0x" << String(TMCSTEPPER_VERSION, HEX));
-        }
-
-        config_message();
-
-        // After initializing all of the TMC drivers, create a task to
-        // display StallGuard data.  List == this for the final instance.
-        if (List == this) {
-            xTaskCreatePinnedToCore(readSgTask,    // task
-                                    "readSgTask",  // name for task
-                                    4096,          // size of task stack
-                                    this,          // parameters
-                                    1,             // priority
-                                    NULL,
-                                    SUPPORT_TASK_CORE  // must run the task on same core
-            );
-        }
     }
 
     /*

@@ -5,18 +5,18 @@
 
 #include "Servo.h"
 #include "RcServoSettings.h"
-#include "Driver/PwmPin.h"
 
 namespace MotorDrivers {
     class RcServo : public Servo {
     protected:
+        int _timer_ms = 20;
+
         void config_message() override;
 
         void set_location();
 
         Pin      _output_pin;
         uint32_t _pwm_freq = SERVO_PWM_FREQ_DEFAULT;  // 50 Hz
-        PwmPin*  _pwm;
         uint32_t _current_pwm_duty;
 
         bool _disabled;
@@ -32,16 +32,13 @@ namespace MotorDrivers {
         bool _has_errors = false;
 
     public:
-        RcServo() = default;
-        ~RcServo() {
-            if (_pwm) {
-                delete _pwm;
-            }
-        }
+        RcServo(const char* name) : Servo(name) {}
+        ~RcServo() {}
+
+        void read_settings();
 
         // Overrides for inherited methods
         void init() override;
-        void read_settings() override;
         bool set_homing_mode(bool isHoming) override;
         void set_disable(bool disable) override;
         void update() override;
@@ -54,9 +51,9 @@ namespace MotorDrivers {
             handler.item("pwm_hz", _pwm_freq, SERVO_PWM_FREQ_MIN, SERVO_PWM_FREQ_MAX);
             handler.item("min_pulse_us", _min_pulse_us, SERVO_PULSE_US_MIN, SERVO_PULSE_US_MAX);
             handler.item("max_pulse_us", _max_pulse_us, SERVO_PULSE_US_MIN, SERVO_PULSE_US_MAX);
-        }
+            handler.item("timer_ms", _timer_ms);
 
-        // Name of the configurable. Must match the name registered in the cpp file.
-        const char* name() const override { return "rc_servo"; }
+            Servo::group(handler);
+        }
     };
 }

@@ -4,21 +4,24 @@
 #pragma once
 
 #include "HandlerType.h"
-#include "../Pin.h"
-#include "../EnumItem.h"
-#include "../SpindleDatatypes.h"
-#include "../UartTypes.h"
+#include "src/Pin.h"
+#include "src/Machine/EventPin.h"
+#include "src/EnumItem.h"
+#include "src/SpindleDatatypes.h"
+#include "src/UartTypes.h"
+#include "src/Macro.h"
 
 #include <IPAddress.h>
+#include <string>
 
 namespace Configuration {
     class Configurable;
 
     typedef struct {
-        SpindleSpeed speed;
-        float        percent;
-        uint32_t     offset;
-        uint32_t     scale;
+        SpindleSpeed speed   = 0;
+        float        percent = 0.0;
+        uint32_t     offset  = 0;
+        uint32_t     scale   = 0;
     } speedEntry;
 
     template <typename BaseType>
@@ -33,32 +36,29 @@ namespace Configuration {
         friend class GenericFactory;
 
     public:
-        virtual void item(const char* name, bool& value)                                                        = 0;
-        virtual void item(const char* name, int32_t& value, int32_t minValue = 0, int32_t maxValue = INT32_MAX) = 0;
+        virtual void item(const char* name, Macro& value)                                                                       = 0;
+        virtual void item(const char* name, bool& value)                                                                        = 0;
+        virtual void item(const char* name, int32_t& value, const int32_t minValue = 0, const int32_t maxValue = INT32_MAX)     = 0;
+        virtual void item(const char* name, uint32_t& value, const uint32_t minValue = 0, uint32_t const maxValue = UINT32_MAX) = 0;
 
-        /* We bound uint32_t to INT32_MAX because we use the same parser */
-        void item(const char* name, uint32_t& value, uint32_t minValue = 0, uint32_t maxValue = INT32_MAX) {
-            int32_t v = int32_t(value);
-            item(name, v, int32_t(minValue), int32_t(maxValue));
-            value = uint32_t(v);
-        }
-
-        void item(const char* name, uint8_t& value, uint8_t minValue = 0, uint8_t maxValue = UINT8_MAX) {
+        void item(const char* name, uint8_t& value, const uint8_t minValue = 0, const uint8_t maxValue = UINT8_MAX) {
             int32_t v = int32_t(value);
             item(name, v, int32_t(minValue), int32_t(maxValue));
             value = uint8_t(v);
         }
 
-        virtual void item(const char* name, float& value, float minValue = -3e38, float maxValue = 3e38)  = 0;
-        virtual void item(const char* name, std::vector<speedEntry>& value)                               = 0;
-        virtual void item(const char* name, UartData& wordLength, UartParity& parity, UartStop& stopBits) = 0;
+        virtual void item(const char* name, float& value, const float minValue = -3e38, const float maxValue = 3e38) = 0;
+        virtual void item(const char* name, std::vector<speedEntry>& value)                                          = 0;
+        virtual void item(const char* name, std::vector<float>& value)                                               = 0;
+        virtual void item(const char* name, UartData& wordLength, UartParity& parity, UartStop& stopBits)            = 0;
 
+        virtual void item(const char* name, EventPin& value)  = 0;
         virtual void item(const char* name, Pin& value)       = 0;
         virtual void item(const char* name, IPAddress& value) = 0;
 
-        virtual void item(const char* name, int& value, EnumItem* e) = 0;
+        virtual void item(const char* name, int& value, const EnumItem* e) = 0;
 
-        virtual void item(const char* name, String& value, int minLength = 0, int maxLength = 255) = 0;
+        virtual void item(const char* name, std::string& value, const int minLength = 0, const int maxLength = 255) = 0;
 
         virtual HandlerType handlerType() = 0;
 
@@ -66,7 +66,8 @@ namespace Configuration {
         void section(const char* name, T*& value, U... args) {
             if (handlerType() == HandlerType::Parser) {
                 // For Parser, matchesUninitialized(name) resolves to _parser.is(name)
-                if (value == nullptr && matchesUninitialized(name)) {
+                if (matchesUninitialized(name)) {
+                    Assert(value == nullptr, "Duplicate section %s", name);
                     value = new T(args...);
                     enterSection(name, value);
                 }

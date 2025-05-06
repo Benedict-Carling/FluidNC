@@ -9,9 +9,12 @@
     a 0-5V or 0-10V value to control the spindle. You would use
     an Op Amp type circuit to get from the 0.3.3V of the ESP32 to that voltage.
 */
-#include "DacSpindle.h"
+#include <sdkconfig.h>
+#ifdef CONFIG_IDF_TARGET_ESP32
 
-#include <esp32-hal-dac.h>  // dacWrite
+#    include "DacSpindle.h"
+
+#    include <esp32-hal-dac.h>  // dacWrite
 
 namespace Spindles {
     // ======================================== Dac ======================================
@@ -28,6 +31,7 @@ namespace Spindles {
             return;
         }
 
+        _enable_pin.setAttr(Pin::Attr::Output);
         _direction_pin.setAttr(Pin::Attr::Output);
 
         is_reversable = _direction_pin.defined();
@@ -37,14 +41,18 @@ namespace Spindles {
         }
         setupSpeeds(255);
 
+        init_atc();
         config_message();
     }
 
     void Dac::config_message() {
-        log_info(name() << " Spindle Out:" << _output_pin.name() << " Dir:" << _direction_pin.name() << " Res:8bits");
+        log_info(name() << " Spindle Ena:" << _enable_pin.name() << " Out:" << _output_pin.name() << " Dir:" << _direction_pin.name()
+                        << " Res:8bits" << atc_info());
     }
 
-    void IRAM_ATTR Dac::setSpeedfromISR(uint32_t speed) { set_output(speed); };
+    void IRAM_ATTR Dac::setSpeedfromISR(uint32_t speed) {
+        set_output(speed);
+    };
     void IRAM_ATTR Dac::set_output(uint32_t duty) {
         if (_gpio_ok) {
             auto outputNative = _output_pin.getNative(Pin::Capabilities::DAC);
@@ -58,3 +66,4 @@ namespace Spindles {
         SpindleFactory::InstanceBuilder<Dac> registration("DAC");
     }
 }
+#endif

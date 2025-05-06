@@ -16,6 +16,7 @@ namespace MotorDrivers {
 
     class TrinamicSpiDriver : public TrinamicBase {
     public:
+        TrinamicSpiDriver(const char* name) : TrinamicBase(name) {}
         TrinamicSpiDriver() = default;
 
         // Overrides for inherited methods
@@ -49,7 +50,7 @@ namespace MotorDrivers {
             _spi_setup_done = true;
         }
 
-        void validate() const override { StandardStepper::validate(); }
+        void validate() override { StandardStepper::validate(); }
 
         void group(Configuration::HandlerBase& handler) override {
             TrinamicBase::group(handler);
@@ -62,18 +63,26 @@ namespace MotorDrivers {
             handler.item("stallguard", _stallguard, -64, 63);
             handler.item("stallguard_debug", _stallguardDebugMode);
             handler.item("toff_coolstep", _toff_coolstep, 2, 15);
+
+            handler.item("diag0_error", _diag0_error);
+            handler.item("diag0_otpw", _diag0_otpw);
+            handler.item("diag0_int_pushpull", _diag0_int_pushpull);
         }
 
     protected:
-        Pin       _cs_pin;  // The chip select pin (can be the same for daisy chain)
-        int32_t   _spi_index      = -1;
-        const int _spi_freq       = 100000;
-        bool      _spi_setup_done = false;
+        Pin     _cs_pin;  // The chip select pin (can be the same for daisy chain)
+        int32_t _spi_index      = -1;
+        bool    _spi_setup_done = false;
+
+        bool _diag0_error        = false;
+        bool _diag0_otpw         = false;
+        bool _diag0_int_pushpull = false;
+
+        static constexpr int _spi_freq = 100000;
 
         void config_message() override;
 
         uint8_t setupSPI();
-        void    finalInit();
 
         bool    reportTest(uint8_t result);
         uint8_t toffValue();
@@ -83,9 +92,6 @@ namespace MotorDrivers {
         static uint8_t  spi_index_mask;
 
         PinMapper _cs_mapping;
-
-        void trinamic_test_response();
-        void trinamic_stepper_enable(bool enable);
     };
 
 }

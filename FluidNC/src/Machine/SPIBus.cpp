@@ -8,7 +8,7 @@
 #include "src/SettingsDefinitions.h"
 
 namespace Machine {
-    void SPIBus::validate() const {
+    void SPIBus::validate() {
         if (_miso.defined() || _mosi.defined() || _sck.defined()) {
             Assert(_miso.defined(), "SPI MISO pin should be configured once");
             Assert(_mosi.defined(), "SPI MOSI pin should be configured once");
@@ -17,9 +17,11 @@ namespace Machine {
     }
 
     void SPIBus::init() {
-        pinnum_t mosiPin = 23;
-        pinnum_t misoPin = 19;
-        pinnum_t sckPin  = 18;
+        pinnum_t mosiPin           = 23;
+        pinnum_t misoPin           = 19;
+        pinnum_t sckPin            = 18;
+        int8_t   sckDriveDtrength  = -1;
+        int8_t   mosiDriveDtrength = -1;
 
         if (_miso.defined() || _mosi.defined() || _sck.defined()) {  // validation ensures the rest is also defined.
             log_info("SPI SCK:" << _sck.name() << " MOSI:" << _mosi.name() << " MISO:" << _miso.name());
@@ -29,20 +31,22 @@ namespace Machine {
             misoPin = _miso.getNative(Pin::Capabilities::Input | Pin::Capabilities::Native);
         } else {
             if (sd_fallback_cs->get() == -1) {
-                log_info("SPI not defined");
+                log_debug("SPI not defined");
                 return;
             }
             log_info("Using default SPI pins");
         }
         // Init in DMA mode
-        if (!spi_init_bus(sckPin, misoPin, mosiPin, true)) {
+        if (!spi_init_bus(sckPin, misoPin, mosiPin, true, _sck.driveStrength(), _mosi.driveStrength())) {
             log_error("SPIBus init failed");
             return;
         }
         _defined = true;
     }
 
-    void SPIBus::deinit() { spi_deinit_bus(); }
+    void SPIBus::deinit() {
+        spi_deinit_bus();
+    }
 
     void SPIBus::group(Configuration::HandlerBase& handler) {
         handler.item("miso_pin", _miso);
@@ -63,5 +67,7 @@ namespace Machine {
         // }
     }
 
-    bool SPIBus::defined() { return _defined; }
+    bool SPIBus::defined() {
+        return _defined;
+    }
 }

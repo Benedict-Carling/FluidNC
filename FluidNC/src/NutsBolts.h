@@ -6,11 +6,10 @@
 // #define false 0
 // #define true 1
 
-#include <WString.h>
 #include <cstdint>
-#include <esp_attr.h>
-#include <xtensa/core-macros.h>
+#include <string_view>
 #include "Logging.h"
+#include "Driver/delay_usecs.h"
 
 enum class DwellMode : uint8_t {
     Dwell      = 0,  // (Default: Must be zero)
@@ -19,27 +18,8 @@ enum class DwellMode : uint8_t {
 
 const float SOME_LARGE_VALUE = 1.0E+38f;
 
-// Axis array index values. Must start with 0 and be continuous.
-// Note: You set the number of axes used by changing MAX_N_AXIS.
-// Be sure to define pins or servos in the machine definition file.
-const int X_AXIS = 0;  // Axis indexing value.
-const int Y_AXIS = 1;
-const int Z_AXIS = 2;
-const int A_AXIS = 3;
-const int B_AXIS = 4;
-const int C_AXIS = 5;
-
-const int MAX_AXES = 6;
-
-const int X2_AXIS = (X_AXIS + MAX_AXES);
-const int Y2_AXIS = (Y_AXIS + MAX_AXES);
-const int Z2_AXIS = (Z_AXIS + MAX_AXES);
-const int A2_AXIS = (A_AXIS + MAX_AXES);
-const int B2_AXIS = (B_AXIS + MAX_AXES);
-const int C2_AXIS = (C_AXIS + MAX_AXES);
-
 static inline int toMotor2(int axis) {
-    return axis + MAX_AXES;
+    return axis + MAX_N_AXIS;
 }
 
 // Conversions
@@ -48,8 +28,12 @@ const float INCH_PER_MM = (0.0393701f);
 
 // Useful macros
 #define clear_vector(a) memset(a, 0, sizeof(a))
-#define MAX(a, b) (((a) > (b)) ? (a) : (b))  // changed to upper case to remove conflicts with other libraries
-#define MIN(a, b) (((a) < (b)) ? (a) : (b))  // changed to upper case to remove conflicts with other libraries
+#ifndef MAX
+#    define MAX(a, b) (((a) > (b)) ? (a) : (b))  // changed to upper case to remove conflicts with other libraries
+#endif
+#ifndef MIN
+#    define MIN(a, b) (((a) < (b)) ? (a) : (b))  // changed to upper case to remove conflicts with other libraries
+#endif
 #define isequal_position_vector(a, b) !(memcmp(a, b, sizeof(float) * MAX_N_AXIS))
 
 // Bit field and masking macros
@@ -67,19 +51,16 @@ const float INCH_PER_MM = (0.0393701f);
 #define bitnum_is_true(target, num) ((target & bitnum_to_mask(num)) != 0)
 #define bitnum_is_false(target, num) ((target & bitnum_to_mask(num)) == 0)
 
-// Read a floating point value from a string. Line points to the input buffer, char_counter
+// Read a floating point value from a string. Line points to the input buffer, pos
 // is the indexer pointing to the current character of the line, while float_ptr is
 // a pointer to the result variable. Returns true when it succeeds
-bool read_float(const char* line, size_t* char_counter, float* float_ptr);
-
-// Blocking delay for very short time intervals
-void delay_us(int32_t microseconds);
+bool read_float(const char* line, size_t& pos, float& result);
 
 // Delay while checking for realtime characters and other events
-bool delay_msec(uint32_t milliseconds, DwellMode mode);
+bool dwell_ms(uint32_t milliseconds, DwellMode mode = DwellMode::Dwell);
 
 // Delay without checking for realtime events.  Use only for short delays
-void delay_ms(uint16_t ms);
+void delay_ms(uint32_t ms);
 
 // Computes hypotenuse, avoiding avr-gcc's bloated version and the extra error checking.
 float hypot_f(float x, float y);
@@ -97,58 +78,19 @@ float convert_delta_vector_to_unit_vector(float* vector);
 float limit_acceleration_by_axis_maximum(float* unit_vec);
 float limit_rate_by_axis_maximum(float* unit_vec);
 
+const char* to_hex(uint32_t n);
+
 bool  char_is_numeric(char value);
 char* trim(char* value);
-
-template <class T>
-void swap(T& a, T& b) {
-    T c(a);
-    a = b;
-    b = c;
-}
-
-// Short delays measured using the CPU cycle counter.  There is a ROM
-// routine "esp_delay_us(us)" that almost does what what we need,
-// except that it is in ROM and thus dodgy for use from ISRs.  We
-// duplicate the esp_delay_us() here, but placed in IRAM, inlined,
-// and factored so it can be used in different ways.
-
-inline int32_t IRAM_ATTR getCpuTicks() {
-    return XTHAL_GET_CCOUNT();
-}
-
-extern uint32_t g_ticks_per_us_pro;  // For CPU 0 - typically 240 MHz
-extern uint32_t g_ticks_per_us_app;  // For CPU 1 - typically 240 MHz
-
-inline int32_t IRAM_ATTR usToCpuTicks(int32_t us) {
-    return us * g_ticks_per_us_pro;
-}
-
-inline int32_t IRAM_ATTR usToEndTicks(int32_t us) {
-    return getCpuTicks() + usToCpuTicks(us);
-}
-
-// At the usual ESP32 clock rate of 240MHz, the range of this is
-// just under 18 seconds, but it really should be used only for
-// short delays up to a few tens of microseconds.
-
-inline void IRAM_ATTR spinUntil(int32_t endTicks) {
-    while ((getCpuTicks() - endTicks) < 0) {
-#ifdef ESP32
-        asm volatile("nop");
-#endif
-    }
-}
-
-void delay_us(int32_t us);
+void  trim(std::string_view& sv);
 
 template <typename T>
-T myMap(T x, T in_min, T in_max, T out_min, T out_max) {  // DrawBot_Badge
+T myMap(T x, const T in_min, const T in_max, T out_min, T out_max) {  // DrawBot_Badge
     return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
 
 template <typename T>
-T myConstrain(T in, T min, T max) {
+T myConstrain(T in, const T min, const T max) {
     if (in < min) {
         return min;
     }
@@ -159,14 +101,14 @@ T myConstrain(T in, T min, T max) {
 }
 
 template <typename T>
-T mapConstrain(T x, T in_min, T in_max, T out_min, T out_max) {
+T mapConstrain(T x, const T in_min, const T in_max, T out_min, T out_max) {
     x = myConstrain(x, in_min, in_max);
     return myMap(x, in_min, in_max, out_min, out_max);
 }
 
 // constrain a value and issue a message. Returns true is the value was OK
 template <typename T>
-bool constrain_with_message(T& value, T min, T max, const char* name = "") {
+bool constrain_with_message(T& value, const T min, const T max, const char* name = "") {
     if (value < min || value > max) {
         log_warn(name << " value " << value << " constrained to range (" << min << "," << max << ")");
         value = myConstrain(value, min, max);
@@ -177,4 +119,8 @@ bool constrain_with_message(T& value, T min, T max, const char* name = "") {
 
 bool multiple_bits_set(uint32_t val);
 
-String formatBytes(uint64_t bytes);
+std::string formatBytes(uint64_t bytes);
+
+std::string IP_string(uint32_t ipaddr);
+
+void replace_string_in_place(std::string& subject, const std::string& search, const std::string& replace);

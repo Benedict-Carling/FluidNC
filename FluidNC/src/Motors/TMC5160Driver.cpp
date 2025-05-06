@@ -8,6 +8,8 @@
 namespace MotorDrivers {
 
     void TMC5160Driver::init() {
+        TrinamicSpiDriver::init();
+
         uint8_t cs_id;
         cs_id = setupSPI();
 
@@ -21,7 +23,7 @@ namespace MotorDrivers {
         if (_cs_pin.capabilities().has(Pin::Capabilities::I2S)) {
             tmc5160->setSPISpeed(_spi_freq);
         }
-        TrinamicSpiDriver::finalInit();
+        registration();
     }
 
     void TMC5160Driver::config_motor() {
@@ -29,7 +31,9 @@ namespace MotorDrivers {
         TrinamicBase::config_motor();
     }
 
-    bool TMC5160Driver::test() { return checkVersion(0x30, tmc5160->version()); }
+    bool TMC5160Driver::test() {
+        return checkVersion(0x30, tmc5160->version());
+    }
 
     void TMC5160Driver::set_registers(bool isHoming) {
         if (_has_errors) {
@@ -50,6 +54,10 @@ namespace MotorDrivers {
 
         tmc5160->tpfd(_tpfd);
 
+        tmc5160->diag0_error(_diag0_error);
+        tmc5160->diag0_otpw(_diag0_otpw);
+        tmc5160->diag0_int_pushpull(_diag0_int_pushpull);
+
         switch (_mode) {
             case TrinamicMode ::StealthChop:
                 log_debug(axisName() << " StealthChop");
@@ -67,18 +75,24 @@ namespace MotorDrivers {
             case TrinamicMode ::StallGuard:
                 log_debug(axisName() << " Stallguard");
                 {
-                    auto feedrate = config->_axes->_axis[axis_index()]->_homing->_feedRate;
-
                     tmc5160->en_pwm_mode(false);
                     tmc5160->pwm_autoscale(false);
-                    tmc5160->TCOOLTHRS(calc_tstep(feedrate, 150.0));
-                    tmc5160->THIGH(calc_tstep(feedrate, 60.0));
+                    tmc5160->TCOOLTHRS(calc_tstep(150));
+                    tmc5160->THIGH(calc_tstep(60));
                     tmc5160->sfilt(1);
                     tmc5160->diag1_stall(true);  // stallguard i/o is on diag1
                     tmc5160->sgt(constrain(_stallguard, -64, 63));
                     break;
                 }
         }
+        // dump the registers. This is helpful for people migrating to the Pro version
+        log_verbose("CHOPCONF: " << to_hex(tmc5160->CHOPCONF()));
+        log_verbose("COOLCONF: " << to_hex(tmc5160->COOLCONF()));
+        log_verbose("THIGH: " << to_hex(tmc5160->THIGH()));
+        log_verbose("TCOOLTHRS: " << to_hex(tmc5160->TCOOLTHRS()));
+        log_verbose("GCONF: " << to_hex(tmc5160->GCONF()));
+        log_verbose("PWMCONF: " << to_hex(tmc5160->PWMCONF()));
+        log_verbose("IHOLD_IRUN: " << to_hex(tmc5160->IHOLD_IRUN()));
     }
 
     // Report diagnostic and tuning info
